@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>AR Object Placement - Fixed Controls</title>
+    <title>AR Object Placement - Local Assets</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.10.1/nipplejs.min.js"></script>
     
     <style>
@@ -18,7 +18,7 @@
             margin: 0; overflow: hidden; background-color: #111;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             -webkit-user-select: none; user-select: none;
-            touch-action: none; /* PENTING: Mencegah zoom/scroll default browser */
+            touch-action: none;
         }
 
         /* START SCREEN */
@@ -216,13 +216,29 @@
                 this.reticle = null;
                 this.arObject = null;
                 
+                // --- UPDATE: Menggunakan aset lokal sesuai screenshot ---
+                // Pastikan file-file ini ada di folder 'public' Anda
                 this.availableModels = [
-                    { name: 'Tower House', url: 'tower_house_design.glb', icon: '🏠' },
-                    { name: 'Kitchen', url: 'interior-fix2.glb', icon: '🍳' },
-                    { name: 'Astronaut', url: 'Astronaut.glb', icon: '🧑‍🚀' },
-                    { name: '3 Bedroom House', url: '3 Bedroom house.glb', icon: '🏡' },
-                    // { name: 'Apartment Floor Plan', url: 'Apartment.glb', icon: '🏢' },
-                    { name: 'Room', url: 'Room.glb', icon: '🚪' }
+                    { 
+                        name: 'Tower House', 
+                        url: './tower_house_design.glb', // Sesuaikan nama file persis
+                        icon: '🏠' 
+                    },
+                    { 
+                        name: 'Kitchen', 
+                        url: './interior-fix2.glb', 
+                        icon: '🍳' 
+                    },
+                    { 
+                        name: 'Astronaut', 
+                        url: './Astronaut.glb', 
+                        icon: '🧑‍🚀' 
+                    },
+                    { 
+                        name: '3 Bedroom', 
+                        url: './3_bedroom_house.glb', 
+                        icon: '🏡' 
+                    }
                 ];
                 this.activeModelIndex = 0;
 
@@ -434,6 +450,7 @@
                     this.showToast(`${model.name} Siap!`);
                     document.getElementById('library-drawer').classList.remove('open');
                 } catch (e) {
+                    console.error(e);
                     this.showToast('Gagal memuat model');
                 }
             }
@@ -488,6 +505,7 @@
                     const loader = new THREE.GLTFLoader();
 
                     try {
+                        // Load Reticle
                         const reticleGltf = await this.loadGLTF(loader, 'https://immersive-web.github.io/webxr-samples/media/gltf/reticle/reticle.gltf');
                         this.reticle = reticleGltf.scene;
                     } catch (reticleError) {
@@ -509,16 +527,12 @@
                 }
             }
 
+            // PERBAIKAN DI SINI
             async loadSpecificModel(loader, modelUrl) {
                 try {
-                    // For demo purposes if URL fails, creates a box
-                    // const objectGltf = await this.loadGLTF(loader, modelUrl);
-                    // this.arObject = objectGltf.scene;
-                    
-                    // Fallback to Box if GLTF fails (for standalone test)
-                    const geometry = new THREE.BoxGeometry(0.5, 0.5, 0.5);
-                    const material = new THREE.MeshNormalMaterial();
-                    this.arObject = new THREE.Mesh(geometry, material);
+                    // KODE SEBELUMNYA DI-COMMENT, SEKARANG DIAKTIFKAN
+                    const objectGltf = await this.loadGLTF(loader, modelUrl);
+                    this.arObject = objectGltf.scene;
                     
                     this.arObject.traverse((child) => {
                         if (child.isMesh) {
@@ -527,9 +541,20 @@
                         }
                     });
 
+                    // Normalisasi ukuran (scale) jika model terlalu besar/kecil
+                    // Kita buat ukurannya kira-kira 0.5 meter
+                    const box = new THREE.Box3().setFromObject(this.arObject);
+                    const size = new THREE.Vector3();
+                    box.getSize(size);
+                    const maxDim = Math.max(size.x, size.y, size.z);
+                    const scaleFactor = 0.5 / maxDim;
+                    this.arObject.scale.set(scaleFactor, scaleFactor, scaleFactor);
+
                     if(this.selectedObject) this.deselectObject();
+                    
                 } catch (error) {
-                    // Simple fallback box
+                    console.error("Gagal load GLB, menggunakan kotak fallback:", error);
+                    // Fallback to Box ONLY if GLTF fails
                     const geometry = new THREE.BoxGeometry(0.5, 0.5, 0.5);
                     const material = new THREE.MeshNormalMaterial();
                     this.arObject = new THREE.Mesh(geometry, material);
@@ -553,11 +578,11 @@
                     
                     this.scene = new THREE.Scene();
                     
-                    const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+                    const dirLight = new THREE.DirectionalLight(0xffffff, 2.0); // Terangkan lampu
                     dirLight.position.set(10, 15, 10);
                     this.scene.add(dirLight);
                     
-                    const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+                    const ambientLight = new THREE.AmbientLight(0xffffff, 1.0); // Terangkan lampu
                     this.scene.add(ambientLight);
                     
                     this.scene.add(this.reticle);
