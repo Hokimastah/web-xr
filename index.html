@@ -664,29 +664,41 @@
                 const view = pose.views[0];
                 const cameraMatrix = new THREE.Matrix4().fromArray(view.transform.matrix);
                 
+                // 1. Ambil arah DEPAN kamera (Projected to Floor)
                 const forward = new THREE.Vector3(0, 0, -1).applyMatrix4(cameraMatrix);
-                const right = new THREE.Vector3(1, 0, 0).applyMatrix4(cameraMatrix);
-                
                 forward.y = 0; forward.normalize();
+                
+                // 2. Ambil arah KANAN kamera (Projected to Floor)
+                const right = new THREE.Vector3(1, 0, 0).applyMatrix4(cameraMatrix);
                 right.y = 0; right.normalize();
 
                 const desiredMovement = new THREE.Vector3();
                 
+                // 3. Joystick Atas/Bawah (Z) untuk Maju/Mundur
                 if (Math.abs(this.moveVec.z) > 0.1) {
                     const speedZ = this.moveVec.z * moveSpeed;
+                    // Gerakkan object berlawanan agar user terasa maju
                     desiredMovement.sub(forward.clone().multiplyScalar(speedZ));
                 }
+                
+                // 4. Joystick Kiri/Kanan (X) untuk Geser Samping (Strafe)
+                // Ini mengikuti arah pandang (POV)
                 if (Math.abs(this.moveVec.x) > 0.1) {
                     const speedX = this.moveVec.x * moveSpeed;
+                    // Gerakkan object berlawanan agar user terasa geser
                     desiredMovement.sub(right.clone().multiplyScalar(speedX));
                 }
 
-                if (this.verticalSpeed !== 0) {
-                    desiredMovement.y -= this.verticalSpeed;
+                // Terapkan gerakan
+                if (desiredMovement.lengthSq() > 0) {
+                    const adjustedMovement = this.checkFPVCollisions(desiredMovement);
+                    this.fpvObject.position.add(adjustedMovement);
                 }
-
-                const adjustedMovement = this.checkFPVCollisions(desiredMovement);
-                this.fpvObject.position.add(adjustedMovement);
+                
+                // Vertical movement
+                if (this.verticalSpeed !== 0) {
+                     this.fpvObject.position.y -= this.verticalSpeed;
+                }
             }
             
             handleHitTest(frame) {
