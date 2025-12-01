@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>AR Object Placement - Local Assets</title>
+    <title>AR Object Placement - FPV Mode</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.10.1/nipplejs.min.js"></script>
     
     <style>
@@ -18,7 +18,6 @@
             margin: 0; overflow: hidden; background-color: #111;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             -webkit-user-select: none; user-select: none;
-            touch-action: none;
         }
 
         /* START SCREEN */
@@ -33,6 +32,7 @@
         /* AR DOM OVERLAY ROOT */
         #ar-root {
             display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            /* Ar-root should not block events to the scene by default, interactive children will override */
             pointer-events: none; 
             z-index: 100;
         }
@@ -41,7 +41,7 @@
         #standard-ui {
             display: flex; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             flex-direction: column; justify-content: space-between; 
-            pointer-events: none;
+            pointer-events: none; /* Controlled by JS when active */
         }
 
         .interactive { pointer-events: auto !important; }
@@ -197,8 +197,8 @@
 
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/three@0.126.0/build/three.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.126.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://unpkg.com/three@0.126.0/build/three.js"></script>
+    <script src="https://unpkg.com/three@0.126.0/examples/js/loaders/GLTFLoader.js"></script>
 
     <script>
         class ARObjectPlacement {
@@ -216,34 +216,17 @@
                 this.reticle = null;
                 this.arObject = null;
                 
-                // --- UPDATE: Menggunakan aset lokal sesuai screenshot ---
-                // Pastikan file-file ini ada di folder 'public' Anda
+                // Define available models with icons
                 this.availableModels = [
-                    { 
-                        name: 'Tower House', 
-                        url: './tower_house_design.glb',
-                        icon: '🏠' 
-                    },
-                    { 
-                        name: 'Kitchen', 
-                        url: './interior-fix2.glb', 
-                        icon: '🍳' 
-                    },
-                    { 
-                        name: 'Village House', 
-                        url: './village_house.glb', 
-                        icon: '🏠' 
-                    },
-                    { 
-                        name: '3 Bedroom', 
-                        url: './3_bedroom_house.glb', 
-                        icon: '🏡' 
-                    },
-                    { 
-                        name: 'Infinits', 
-                        url: './infinits.glb', 
-                        icon: '175' 
-                    },
+                    { name: 'Tower House', url: 'tower_house_design.glb', icon: '🏠' },
+                    { name: 'Kitchen', url: 'interior-fix2.glb', icon: '🍳' },
+                    { name: 'Astronaut', url: 'Astronaut.glb', icon: '🧑‍🚀' },
+                    { name: '3 Bedroom House', url: '3 Bedroom house.glb', icon: '🏡' },
+                    // NEW OBJECTS: Pastikan Anda telah mengonversi file .obj ini ke format .glb
+                    // dan letakkan di folder public/ agar dapat dimuat oleh GLTFLoader.
+                    { name: 'Apartment Floor Plan', url: 'Apartment.glb', icon: '🏢' },
+                    { name: 'Room', url: 'Room.glb', icon: '🚪' },
+                    { name : "Infinits Park", url: "Infinites.fbx", icon: "🌳" }
                 ];
                 this.activeModelIndex = 0;
 
@@ -254,13 +237,14 @@
                 this.isUIInteraction = false;
                 this.lastUIInteraction = 0;
                 
-                // --- FIXED GESTURE STATE ---
-                this.isManipulating = false;
-                this.lastTouchX = 0;
-                this.lastTouchY = 0;
-                this.lastTouchDist = 0;
-                // ---------------------------
+                // Touch interaction state
+                this.isDragging = false;
+                this.touchStartX = 0;
+                this.initialRotation = 0;
+                this.startDist = 0;
+                this.startScale = 1;
 
+                // For object selection
                 this.raycaster = new THREE.Raycaster();
                 this.highlightBox = null;
 
@@ -270,16 +254,19 @@
                 this.fpvOriginalScale = new THREE.Vector3();
                 this.fpvOriginalPosition = new THREE.Vector3();
                 this.fpvOriginalRotation = new THREE.Euler();
-                this.fpvTargetScale = 20;
+                this.fpvTargetScale = 20; // Multiplier for 1:1 scale
                 this.baseMovementSpeed = 0.1;
                 this.movementSpeedMultiplier = 1;
                 
-                this.playerHeight = 1.8;
-                this.playerRadius = 0.5;
+                // FPV Collision Detection Properties
+                // Increased playerRadius and playerHeight for more robust collision detection
+                this.playerHeight = 1.8; // Approx user height in meters
+                this.playerRadius = 0.5; // Approx user radius
                 this.collisionRaycaster = new THREE.Raycaster();
 
-                this.moveVec = { x: 0, z: 0 };
-                this.verticalSpeed = 0;
+                // FPV Control State
+                this.moveVec = { x: 0, z: 0 }; // From joystick
+                this.verticalSpeed = 0; // From buttons
                 this.joystick = null;
                 
                 this.init();
@@ -288,16 +275,18 @@
             async init() {
                 this.initUI();
                 await this.checkWebXRSupport();
-                await this.loadModels();
+                await this.loadModels(); // Loads the default model
                 this.renderLibrary();
                 this.createSelectionHighlight();
             }
 
             initUI() {
+                // Main Menu
                 document.getElementById('btn-start').onclick = () => this.startAR();
                 document.getElementById('btn-exit').onclick = () => this.exitAR();
                 document.getElementById('btn-reset').onclick = () => this.resetObjects();
 
+                // Library Drawer
                 document.getElementById('btn-library').onclick = (e) => {
                     e.stopPropagation();
                     this.isUIInteraction = true;
@@ -308,11 +297,13 @@
                     document.getElementById('library-drawer').classList.remove('open');
                 };
 
+                // Action Bar
                 this.bindButton('btn-delete', () => this.deleteSelectedObject());
                 this.bindButton('btn-deselect', () => this.deselectObject());
                 this.bindButton('btn-fpv', () => this.enterFPVMode());
                 document.getElementById('btn-exit-fpv').onclick = () => this.exitFPVMode();
 
+                // FPV Elevation
                 const setupHold = (id, val) => {
                     const btn = document.getElementById(id);
                     const start = (e) => { e.preventDefault(); this.verticalSpeed = val; };
@@ -323,6 +314,7 @@
                 setupHold('btn-up', 0.05);
                 setupHold('btn-down', -0.05);
 
+                // Generic UI Interaction tracking
                 const uiElements = document.querySelectorAll('.interactive, #library-drawer');
                 uiElements.forEach(el => {
                     el.addEventListener('touchstart', () => { this.isUIInteraction = true; this.lastUIInteraction = Date.now(); });
@@ -338,89 +330,11 @@
                     });
                 });
 
-                // --- NEW GESTURE LISTENERS ---
+                // Touch gestures for scale/rotate
                 window.addEventListener('touchstart', (e) => this.onTouchStart(e), {passive: false});
                 window.addEventListener('touchmove', (e) => this.onTouchMove(e), {passive: false});
                 window.addEventListener('touchend', () => this.onTouchEnd());
             }
-
-            // --- FIXED TOUCH LOGIC START ---
-
-            getTouchDistance(e) {
-                const dx = e.touches[0].pageX - e.touches[1].pageX;
-                const dy = e.touches[0].pageY - e.touches[1].pageY;
-                return Math.hypot(dx, dy);
-            }
-
-            onTouchStart(e) {
-                if (!this.selectedObject || this.fpvMode || this.isUIInteraction) return;
-
-                // Menyimpan state awal ketika jari menyentuh layar
-                this.isManipulating = true;
-
-                if (e.touches.length === 2) {
-                    // Mode Scaling: Simpan jarak awal jari untuk perhitungan Delta nanti
-                    this.lastTouchDist = this.getTouchDistance(e);
-                } else if (e.touches.length === 1) {
-                    // Mode Rotate: Simpan posisi X awal jari
-                    this.lastTouchX = e.touches[0].pageX;
-                }
-            }
-
-            onTouchMove(e) {
-                if (!this.selectedObject || this.fpvMode || this.isUIInteraction || !this.isManipulating) return;
-
-                // Mencegah scroll layar browser saat memutar objek
-                e.preventDefault();
-
-                if (e.touches.length === 2) {
-                    // --- SCALING LOGIC (DELTA) ---
-                    const currentDist = this.getTouchDistance(e);
-                    
-                    if (this.lastTouchDist > 0) {
-                        // Hitung rasio perubahan dari frame sebelumnya (Delta)
-                        const scaleFactor = currentDist / this.lastTouchDist;
-                        
-                        // Terapkan ke scale object saat ini
-                        const newScale = this.selectedObject.scale.x * scaleFactor;
-                        
-                        // Batasi scale (Clamp)
-                        const clampedScale = Math.max(0.1, Math.min(newScale, 10.0));
-                        this.selectedObject.scale.set(clampedScale, clampedScale, clampedScale);
-                        
-                        this.updateHighlightBox();
-                    }
-                    
-                    // Update lastTouchDist untuk frame berikutnya
-                    this.lastTouchDist = currentDist;
-
-                } else if (e.touches.length === 1) {
-                    // --- ROTATION LOGIC (DELTA) ---
-                    const currentX = e.touches[0].pageX;
-                    
-                    // Hitung selisih gerak dari frame sebelumnya
-                    const deltaX = currentX - this.lastTouchX;
-                    
-                    // Sensitivitas Rotasi (Sesuaikan jika terlalu cepat/lambat)
-                    const sensitivity = 0.005; 
-                    
-                    this.selectedObject.rotation.y += deltaX * sensitivity;
-                    this.updateHighlightBox();
-
-                    // Update posisi terakhir untuk frame berikutnya
-                    this.lastTouchX = currentX;
-                }
-            }
-
-            onTouchEnd() { 
-                // Reset flag manipulasi sedikit delay agar tidak bentrok dengan tap/click
-                setTimeout(() => { 
-                    this.isManipulating = false; 
-                    this.lastTouchDist = 0;
-                }, 100); 
-            }
-            
-            // --- FIXED TOUCH LOGIC END ---
 
             bindButton(id, callback) {
                 const btn = document.getElementById(id);
@@ -455,7 +369,6 @@
                     this.showToast(`${model.name} Siap!`);
                     document.getElementById('library-drawer').classList.remove('open');
                 } catch (e) {
-                    console.error(e);
                     this.showToast('Gagal memuat model');
                 }
             }
@@ -479,6 +392,51 @@
                 });
                 this.highlightBox = new THREE.LineSegments(edges, material);
                 this.highlightBox.visible = false;
+            }
+
+            onTouchStart(e) {
+                if (!this.selectedObject || this.fpvMode || this.isUIInteraction) return;
+                this.isDragging = false; 
+                if (e.touches.length === 2) {
+                    const dx = e.touches[0].pageX - e.touches[1].pageX;
+                    const dy = e.touches[0].pageY - e.touches[1].pageY;
+                    this.startDist = Math.hypot(dx, dy);
+                    this.startScale = this.selectedObject.scale.x;
+                } else if (e.touches.length === 1) {
+                    this.touchStartX = e.touches[0].pageX;
+                    this.initialRotation = this.selectedObject.rotation.y;
+                }
+            }
+
+            onTouchMove(e) {
+                if (!this.selectedObject || this.fpvMode || this.isUIInteraction) return;
+                
+                if (e.touches.length === 2) {
+                    e.preventDefault(); 
+                    this.isDragging = true; 
+                    const dx = e.touches[0].pageX - e.touches[1].pageX;
+                    const dy = e.touches[0].pageY - e.touches[1].pageY;
+                    const currDist = Math.hypot(dx, dy);
+                    if (this.startDist > 0) {
+                        const scaleFactor = currDist / this.startDist;
+                        let newScale = this.startScale * scaleFactor;
+                        newScale = Math.max(0.1, Math.min(newScale, 5.0));
+                        this.selectedObject.scale.set(newScale, newScale, newScale);
+                        this.updateHighlightBox();
+                    }
+                } else if (e.touches.length === 1) {
+                    const dx = e.touches[0].pageX - this.touchStartX;
+                    if (Math.abs(dx) > 10) {
+                        this.isDragging = true; 
+                        const sensitivity = 0.01;
+                        this.selectedObject.rotation.y = this.initialRotation + (dx * sensitivity);
+                        this.updateHighlightBox();
+                    }
+                }
+            }
+            
+            onTouchEnd() { 
+                setTimeout(() => { this.isDragging = false; }, 100); 
             }
 
             async checkWebXRSupport() {
@@ -510,7 +468,6 @@
                     const loader = new THREE.GLTFLoader();
 
                     try {
-                        // Load Reticle
                         const reticleGltf = await this.loadGLTF(loader, 'https://immersive-web.github.io/webxr-samples/media/gltf/reticle/reticle.gltf');
                         this.reticle = reticleGltf.scene;
                     } catch (reticleError) {
@@ -520,7 +477,6 @@
                     }
                     this.reticle.visible = false;
 
-                    // Load default model
                     await this.loadSpecificModel(loader, this.availableModels[0].url);
                     
                     statusEl.innerText = 'Siap untuk AR';
@@ -532,10 +488,8 @@
                 }
             }
 
-            // PERBAIKAN DI SINI
             async loadSpecificModel(loader, modelUrl) {
                 try {
-                    // KODE SEBELUMNYA DI-COMMENT, SEKARANG DIAKTIFKAN
                     const objectGltf = await this.loadGLTF(loader, modelUrl);
                     this.arObject = objectGltf.scene;
                     
@@ -543,26 +497,15 @@
                         if (child.isMesh) {
                             child.castShadow = true;
                             child.receiveShadow = true;
+                            if (child.material && child.material.map) {
+                                child.material.map.encoding = THREE.sRGBEncoding;
+                            }
                         }
                     });
 
-                    // Normalisasi ukuran (scale) jika model terlalu besar/kecil
-                    // Kita buat ukurannya kira-kira 0.5 meter
-                    const box = new THREE.Box3().setFromObject(this.arObject);
-                    const size = new THREE.Vector3();
-                    box.getSize(size);
-                    const maxDim = Math.max(size.x, size.y, size.z);
-                    const scaleFactor = 0.5 / maxDim;
-                    this.arObject.scale.set(scaleFactor, scaleFactor, scaleFactor);
-
                     if(this.selectedObject) this.deselectObject();
-                    
                 } catch (error) {
-                    console.error("Gagal load GLB, menggunakan kotak fallback:", error);
-                    // Fallback to Box ONLY if GLTF fails
-                    const geometry = new THREE.BoxGeometry(0.5, 0.5, 0.5);
-                    const material = new THREE.MeshNormalMaterial();
-                    this.arObject = new THREE.Mesh(geometry, material);
+                    throw error;
                 }
             }
             
@@ -583,11 +526,11 @@
                     
                     this.scene = new THREE.Scene();
                     
-                    const dirLight = new THREE.DirectionalLight(0xffffff, 2.0); // Terangkan lampu
+                    const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
                     dirLight.position.set(10, 15, 10);
                     this.scene.add(dirLight);
                     
-                    const ambientLight = new THREE.AmbientLight(0xffffff, 1.0); // Terangkan lampu
+                    const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
                     this.scene.add(ambientLight);
                     
                     this.scene.add(this.reticle);
@@ -606,6 +549,7 @@
                     this.camera = new THREE.PerspectiveCamera();
                     this.camera.matrixAutoUpdate = false;
                     
+                    // IMPORTANT: Use #ar-root as the DOM Overlay Root
                     this.session = await navigator.xr.requestSession("immersive-ar", {
                         requiredFeatures: ['hit-test'],
                         optionalFeatures: ['dom-overlay'],
@@ -624,7 +568,7 @@
                     
                     this.session.requestAnimationFrame((time, frame) => this.onXRFrame(time, frame));
                     
-                    document.getElementById('standard-ui').style.pointerEvents = 'auto';
+                    document.getElementById('standard-ui').style.pointerEvents = 'auto'; // Make Standard UI interactive when AR starts
                     this.showToast('Pindai area lantai...');
                     
                 } catch (error) {
@@ -646,7 +590,9 @@
                     if (!this.fpvMode) {
                         this.handleHitTest(frame);
                     } else {
-                        if(this.fpvObject) this.fpvObject.updateMatrixWorld(true); 
+                        // Crucial: Update matrixWorld for accurate collision checks against fpvObject
+                        // This ensures its bounding box and mesh positions are correct for raycasting.
+                        this.fpvObject.updateMatrixWorld(true); 
                         this.handleFPVMovement(pose);
                     }
                     
@@ -666,44 +612,66 @@
 
                 const moveSpeed = this.baseMovementSpeed * this.movementSpeedMultiplier;
                 
+                // 1. Ambil Matrix Kamera (Posisi & Rotasi HP saat ini)
                 const view = pose.views[0];
                 const cameraMatrix = new THREE.Matrix4().fromArray(view.transform.matrix);
                 
-                // 1. Ambil arah DEPAN kamera (Projected to Floor)
+                // 2. Ekstrak arah "Depan" dan "Kanan" relatif terhadap HP
+                // (0, 0, -1) adalah depan kamera standar
+                // (1, 0, 0) adalah kanan kamera standar
                 const forward = new THREE.Vector3(0, 0, -1).applyMatrix4(cameraMatrix);
-                forward.y = 0; forward.normalize();
-                
-                // 2. Ambil arah KANAN kamera (Projected to Floor)
                 const right = new THREE.Vector3(1, 0, 0).applyMatrix4(cameraMatrix);
-                right.y = 0; right.normalize();
+                
+                // PENTING: Kita ingin gerakan relatif terhadap rotasi kamera, 
+                // tapi TIDAK mau posisi kamera (translation) mempengaruhi vektor arah.
+                // Jadi kita kurangi dengan posisi kamera itu sendiri.
+                const cameraPosition = new THREE.Vector3().setFromMatrixPosition(cameraMatrix);
+                forward.sub(cameraPosition);
+                right.sub(cameraPosition);
+
+                // 3. FLATTEN ke Lantai (Abaikan Y)
+                // Agar saat nunduk/dongak, gerakan tetap mendatar di lantai
+                forward.y = 0;
+                right.y = 0;
+                
+                // Normalisasi (panjang vektor jadi 1) agar kecepatan konsisten
+                forward.normalize();
+                right.normalize();
 
                 const desiredMovement = new THREE.Vector3();
                 
-                // 3. Joystick Atas/Bawah (Z) untuk Maju/Mundur
-                if (Math.abs(this.moveVec.z) > 0.1) {
+                // 4. Mapping Joystick
+                // LOGIKA AR: Kita menggerakkan DUNIA, bukan KAMERA.
+                // Jika Joystick MAJU (Z positif di nipplejs kadang Y), kita ingin user merasa maju.
+                // User Maju = Objek Mundur (Mendekat ke user).
+                
+                // Joystick Y (Maju/Mundur)
+                if (this.moveVec.z !== 0) {
+                    // moveVec.z positif (atas) -> User Maju -> Objek Mundur (arah lawanan forward)
+                    // moveVec.z negatif (bawah) -> User Mundur -> Objek Maju (arah forward)
                     const speedZ = this.moveVec.z * moveSpeed;
-                    // Gerakkan object berlawanan agar user terasa maju
-                    desiredMovement.sub(forward.clone().multiplyScalar(speedZ));
+                    // Kita tarik objek berlawanan arah pandangan
+                    desiredMovement.add(forward.multiplyScalar(-speedZ));
                 }
                 
-                // 4. Joystick Kiri/Kanan (X) untuk Geser Samping (Strafe)
-                // Ini mengikuti arah pandang (POV)
-                if (Math.abs(this.moveVec.x) > 0.1) {
+                // Joystick X (Kiri/Kanan)
+                if (this.moveVec.x !== 0) {
                     const speedX = this.moveVec.x * moveSpeed;
-                    // Gerakkan object berlawanan agar user terasa geser
-                    desiredMovement.sub(right.clone().multiplyScalar(speedX));
+                    // Joystick Kanan -> User Geser Kanan -> Objek Geser Kiri (arah lawanan right)
+                    desiredMovement.add(right.multiplyScalar(-speedX));
                 }
 
-                // Terapkan gerakan
-                if (desiredMovement.lengthSq() > 0) {
-                    const adjustedMovement = this.checkFPVCollisions(desiredMovement);
-                    this.fpvObject.position.add(adjustedMovement);
-                }
-                
-                // Vertical movement
+                // 5. Kontrol Elevator (Naik/Turun Vertikal)
                 if (this.verticalSpeed !== 0) {
-                     this.fpvObject.position.y -= this.verticalSpeed;
+                    // Tombol Naik -> User Naik -> Objek Turun
+                    desiredMovement.y -= this.verticalSpeed;
                 }
+
+                // 6. Cek Tabrakan
+                const adjustedMovement = this.checkFPVCollisions(desiredMovement);
+                
+                // 7. Terapkan Gerakan
+                this.fpvObject.position.add(adjustedMovement);
             }
             
             handleHitTest(frame) {
@@ -722,7 +690,7 @@
             }
             
             onSelect(event) {
-                if (this.isUIInteraction || this.isManipulating || this.fpvMode) return;
+                if (this.isUIInteraction || this.isDragging || this.fpvMode) return;
 
                 const frame = event.frame;
                 const inputSource = event.inputSource;
@@ -759,43 +727,39 @@
             }
 
             placeObject() {
-                // 1. Clone Model Asli (Mesh Visual)
+                if (!this.arObject) return;
+
+                // 1. Clone Model Asli
                 const rawModel = this.arObject.clone();
                 
-                // 2. Hitung Bounding Box dari model asli untuk mendapatkan dimensi & offset
+                // 2. Hitung Bounding Box untuk cari titik tengah visual
                 const box = new THREE.Box3().setFromObject(rawModel);
                 const center = new THREE.Vector3();
-                box.getCenter(center); // Titik tengah geometri
+                box.getCenter(center);
                 
-                // 3. Buat Container (Group) sebagai Pivot Point baru
-                // Container ini yang nantinya akan kita Scale & Rotate, bukan mesh-nya langsung
-                const pivotContainer = new THREE.Group();
+                // 3. Buat Wadah (Group) sebagai Pivot Point baru
+                const pivotGroup = new THREE.Group();
                 
-                // 4. Letakkan Container tepat di posisi Reticle (Lantai)
-                pivotContainer.position.copy(this.reticle.position);
-                
-                // 5. Geser Model asli DI DALAM Container (Parenting)
-                // Logika: 
-                // - Geser X & Z agar tengah model pas di tengah container (-center.x)
-                // - Geser Y agar BAGIAN BAWAH model (box.min.y) pas di titik 0 container
+                // 4. Masukkan model ke wadah, dan geser supaya tengahnya pas di (0,0,0) wadah
+                // - center.x/z: Geser tengah ke 0
+                // - box.min.y: Geser dasar objek ke 0 (supaya napak lantai)
                 rawModel.position.x = -center.x;
+                rawModel.position.y = -box.min.y;
                 rawModel.position.z = -center.z;
-                rawModel.position.y = -box.min.y; 
                 
-                // Reset transformasi model asli karena Container yang akan menanggung scale/rotasi
-                rawModel.scale.set(1, 1, 1);
-                rawModel.rotation.set(0, 0, 0);
+                pivotGroup.add(rawModel);
 
-                // 6. Masukkan Model ke dalam Container
-                pivotContainer.add(rawModel);
-
-                // Setup Metadata pada Container
-                pivotContainer.userData.objectId = this.objectIndex++;
+                // 5. Tempatkan Wadah di posisi Reticle
+                pivotGroup.position.copy(this.reticle.position);
+                pivotGroup.rotation.y = 0;
+                pivotGroup.scale.set(1, 1, 1);
                 
-                // 7. Masukkan Container ke Scene dan Array
-                this.scene.add(pivotContainer);
-                this.placedObjects.push(pivotContainer);
-                this.selectObject(pivotContainer);
+                // ID untuk keperluan tracking/hapus
+                pivotGroup.userData.objectId = this.objectIndex++;
+                
+                this.scene.add(pivotGroup);
+                this.placedObjects.push(pivotGroup);
+                this.selectObject(pivotGroup);
             }
 
             selectObject(object) {
@@ -847,20 +811,21 @@
 
                 const targetScale = this.fpvOriginalScale.x * this.fpvTargetScale;
                 this.fpvObject.scale.set(targetScale, targetScale, targetScale);
-                this.fpvObject.updateMatrixWorld(true);
+                this.fpvObject.updateMatrixWorld(true); // Crucial: Update matrixWorld after scaling
 
-                const tempBox = new THREE.Box3().setFromObject(this.fpvObject);
-                const objectCenter = tempBox.getCenter(new THREE.Vector3());
-                const objectBaseY = tempBox.min.y;
+                // Calculate bounding box AFTER scaling for accurate entry position
+                // UPDATE: Objek sudah dinormalisasi (Dasar objek = 0,0,0 group).
+                // Kita cukup posisikan group supaya dasar lantai ada di -playerHeight relatif viewer.
                 
-                this.fpvObject.position.y = -this.playerHeight - objectBaseY;
+                this.fpvObject.position.set(0, -this.playerHeight, 0);
                 
-                this.fpvObject.position.x = -objectCenter.x;
-                this.fpvObject.position.z = -objectCenter.z;
+                // Update matrix agar collision detection akurat
+                this.fpvObject.updateMatrixWorld(true);
 
                 this.reticle.visible = false;
                 this.highlightBox.visible = false;
                 
+                // UI Switching: Hiding Standard, Showing FPV
                 document.getElementById('standard-ui').style.display = 'none';
                 document.getElementById('standard-ui').style.pointerEvents = 'none';
 
@@ -924,13 +889,17 @@
                 if (!this.fpvObject || finalMovement.lengthSq() === 0) return finalMovement;
 
                 const collisionObjects = [];
+                // In FPV mode, we primarily collide with the FPV object itself (its internal walls)
+                // Other small placed objects are ignored for collision in this scaled view.
                 if (this.fpvMode) {
                     this.fpvObject.traverse(child => {
+                        // Ensure only meshes contribute to collision
                         if (child.isMesh) {
                             collisionObjects.push(child);
                         }
                     });
                 } else {
+                    // In normal AR mode, collide with all placed objects except the one being manipulated
                     this.placedObjects.forEach(obj => {
                         obj.traverse(child => {
                             if (child.isMesh) {
@@ -942,36 +911,40 @@
 
                 if (collisionObjects.length === 0) return finalMovement;
 
-                const playerPos = new THREE.Vector3(0, 0, 0);
+                const playerPos = new THREE.Vector3(0, 0, 0); // Player is at (0,0,0) in viewer space
                 let adjustedMovement = finalMovement.clone();
                 const invertedMovement = finalMovement.clone().negate();
 
+                // --- Horizontal Collision ---
                 const horizontalMovementAttempt = new THREE.Vector3(invertedMovement.x, 0, invertedMovement.z);
                 if (horizontalMovementAttempt.lengthSq() > 0) {
                     const horizontalDirection = horizontalMovementAttempt.clone().normalize();
+                    // Casting multiple rays for better collision detection (front-left, front, front-right)
                     const rays = [
                         horizontalDirection,
-                        horizontalDirection.clone().applyAxisAngle(new THREE.Vector3(0,1,0), Math.PI / 4), 
-                        horizontalDirection.clone().applyAxisAngle(new THREE.Vector3(0,1,0), -Math.PI / 4) 
+                        horizontalDirection.clone().applyAxisAngle(new THREE.Vector3(0,1,0), Math.PI / 4), // 45 degrees left
+                        horizontalDirection.clone().applyAxisAngle(new THREE.Vector3(0,1,0), -Math.PI / 4) // 45 degrees right
                     ];
 
                     let collisionDetected = false;
                     for (const ray of rays) {
                         this.collisionRaycaster.set(playerPos, ray);
                         this.collisionRaycaster.near = 0;
+                        // Far should cover player radius + movement distance
                         this.collisionRaycaster.far = this.playerRadius + horizontalMovementAttempt.length(); 
 
                         const intersects = this.collisionRaycaster.intersectObjects(collisionObjects, true);
                         if (intersects.length > 0) {
                             const firstHit = intersects[0];
-                            if (firstHit.distance < this.playerRadius) { 
+                            if (firstHit.distance < this.playerRadius) { // Already intersecting or very close
                                 collisionDetected = true;
                                 break;
                             }
+                            // If an obstacle is detected in the path
                             if (firstHit.distance < horizontalMovementAttempt.length() + this.playerRadius) {
-                                if (firstHit.face) { 
+                                if (firstHit.face) { // Use normal for sliding if face data is available
                                     const hitNormal = firstHit.face.normal;
-                                    hitNormal.y = 0; 
+                                    hitNormal.y = 0; // Ensure we only consider horizontal collision
                                     hitNormal.normalize();
 
                                     const slideDirection = horizontalMovementAttempt.clone().projectOnPlane(hitNormal);
@@ -984,6 +957,7 @@
                                         adjustedMovement.z = 0;
                                     }
                                 } else {
+                                    // Fallback: If no face data (e.g., from some loaders), just stop movement
                                     adjustedMovement.x = 0;
                                     adjustedMovement.z = 0;
                                 }
@@ -999,24 +973,28 @@
                     }
                 }
 
+                // --- Vertical Collision ---
                 const verticalMovementAttempt = invertedMovement.y;
                 if (Math.abs(verticalMovementAttempt) > 0) {
+                    // Rays cast from player's head and feet positions
                     const headPos = playerPos.clone().add(new THREE.Vector3(0, this.playerHeight / 2 - this.playerRadius / 2, 0));
                     const feetPos = playerPos.clone().add(new THREE.Vector3(0, -this.playerHeight / 2 + this.playerRadius / 2, 0));
                     
+                    // Check ceiling collision (if moving up)
                     if (verticalMovementAttempt > 0) { 
-                        this.collisionRaycaster.set(headPos, new THREE.Vector3(0, 1, 0)); 
+                        this.collisionRaycaster.set(headPos, new THREE.Vector3(0, 1, 0)); // Ray points upwards
                         this.collisionRaycaster.near = 0;
-                        this.collisionRaycaster.far = verticalMovementAttempt + this.playerRadius; 
+                        this.collisionRaycaster.far = verticalMovementAttempt + this.playerRadius; // Check up to player radius + movement
                         const ceilHits = this.collisionRaycaster.intersectObjects(collisionObjects, true);
-                        if (ceilHits.length > 0) finalMovement.y = 0; 
+                        if (ceilHits.length > 0) finalMovement.y = 0; // Stop upward movement (of fpvObject)
                     }
+                    // Check ground collision (if moving down)
                     else if (verticalMovementAttempt < 0) {
-                        this.collisionRaycaster.set(feetPos, new THREE.Vector3(0, -1, 0)); 
+                        this.collisionRaycaster.set(feetPos, new THREE.Vector3(0, -1, 0)); // Ray points downwards
                         this.collisionRaycaster.near = 0;
-                        this.collisionRaycaster.far = Math.abs(verticalMovementAttempt) + this.playerRadius; 
+                        this.collisionRaycaster.far = Math.abs(verticalMovementAttempt) + this.playerRadius; // Check down to player radius + movement
                         const groundHits = this.collisionRaycaster.intersectObjects(collisionObjects, true);
-                        if (groundHits.length > 0) finalMovement.y = 0; 
+                        if (groundHits.length > 0) finalMovement.y = 0; // Stop downward movement (of fpvObject)
                     }
                 }
 
@@ -1039,6 +1017,7 @@
                 this.cleanup();
                 document.getElementById('ar-root').style.display = 'none';
                 document.getElementById('start-screen').style.display = 'block';
+                console.log('AR session ended');
             }
             
             cleanup() {
