@@ -18,7 +18,7 @@
 Arsitek sering menghadapi tantangan dalam mempresentasikan desain mereka kepada klien:
 - **Visualisasi 2D** (blueprint, denah) sulit dipahami oleh klien awam
 - **Maquette fisik** mahal dan memakan waktu untuk dibuat
-- **Render 3D** di layar tidak memberikan sense of scale yang akurat
+- **Render 3D**  di layar tidak memberikan sense of scale yang akurat
 - **Virtual Reality** memerlukan perangkat khusus yang mahal dan tidak praktis untuk presentasi di lapangan
 
 ### Solusi
