@@ -51,13 +51,12 @@ Arsitek sering menghadapi tantangan dalam mempresentasikan desain mereka kepada 
 
 ### 3. **Model Library**
 - Gallery model 3D dengan preview icon
-- 6+ model arsitektur siap pakai:
-  - Tower House Design
-  - Kitchen Interior
+- model arsitektur siap pakai:
+  - Tower House
+  - Kitchen
   - 3 Bedroom House
-  - Apartment Floor Plan
-  - Room Layout
-  - Astronaut (contoh)
+  - Sinchan House
+  - Hokage Room
 - Dynamic loading untuk efisiensi memori
 
 ### 4. **FPV (First-Person View) Mode**
@@ -271,9 +270,6 @@ checkFPVCollisions(movementVector) {
             movement = movement.projectOnPlane(hit.normal);
         }
     });
-    
-    // Vertical collision (ceiling/floor)
-    // ... similar logic for up/down rays
 }
 ```
 
@@ -490,4 +486,4 @@ placeObject() {
 ---
 
 
-**Built with ❤️ for you all**
+**Admin Grup Bumi Datar**
